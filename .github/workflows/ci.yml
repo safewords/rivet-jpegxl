@@ -32,7 +32,8 @@ jobs:
         # read-only for pull requests, written by pushes to develop / main.
         run: if command -v ci-cache-setup >/dev/null; then ci-cache-setup; else echo "no compile cache on this runner"; fi
       # The jxl-rs test files: every layout and depth, Exif, an animation,
-      # the limits, damaged input; once with Brotli-compressed boxes.
+      # the limits, damaged input; once with Brotli-compressed boxes. And the
+      # encoder, every output decoded by jxl-rs and compared sample for sample.
       - run: cargo test --release
       - run: cargo test --release --features brotli
 

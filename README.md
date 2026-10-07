@@ -4,7 +4,8 @@
 
 **JPEG XL decoding** with a small, typed API, over
 [jxl-rs](https://github.com/libjxl/jxl-rs) — the JPEG XL project's own
-pure-Rust decoder. No C, no system libraries, no build script.
+pure-Rust decoder — and **lossless JPEG XL encoding** of this crate's own.
+No C, no system libraries, no build script.
 
 Written for the **[rivet](https://github.com/safewords/rivet)** transcoder,
 where it is JPEG XL input to the still-image path (`rivet image in.jxl`,
@@ -54,6 +55,10 @@ let options = jpegxl::DecodeOptions {
     ..Default::default()
 };
 let rgb = jpegxl::decode_with(&data, &options)?;
+
+// Lossless encoding: the same samples back from any decoder.
+let pixels = vec![0u8; 64 * 48 * 4];
+let jxl = jpegxl::encode_lossless(64, 48, jpegxl::Channels::Rgba, jpegxl::Samples::U8(&pixels))?;
 # Ok(()) }
 ```
 
@@ -67,7 +72,20 @@ let rgb = jpegxl::decode_with(&data, &options)?;
 | **Limits** | `Limits::max_pixels` (default 2^28) is checked from the header before anything is allocated, and fed to jxl-rs's own check; `max_frames` bounds `frames`. |
 | **Threads** | `threads` (0: one per core) runs jxl-rs's parallel work on scoped std threads; the pixels are the same whatever the count. |
 
-Decode only: jxl-rs is a decoder.
+## Encoding
+
+`encode_lossless` writes a bare codestream holding one modular frame: gray,
+gray + alpha, RGB or RGBA, 8 or 16 bits a sample, sRGB (gray: the sRGB
+curve), straight alpha. Each channel's samples are predicted from their
+neighbours — West, North or the clamped gradient, whichever codes that
+channel smallest — and the residuals are prefix coded, one histogram per
+channel, in 256-pixel groups.
+
+It is a first encoder: exact, quick, and not yet small. Prefix codes spend
+at least a bit on each sample, so smooth pictures come out larger than
+libjxl makes them; richer contexts (the MA tree splitting on more than the
+channel), ANS, the colour transforms (RCT, palette) and, later, lossy
+VarDCT are what close the gap.
 
 ## How it is checked
 
@@ -78,9 +96,15 @@ thread and many), the limits, and truncated or damaged input as errors rather
 than panics — plus the colour-encoding and Exif parsing. jxl-rs is tested
 against the JPEG XL conformance suite in its own repository.
 
+The encoder is checked against jxl-rs: every layout at 8 and 16 bits, sizes
+from 1x1 up, pictures spanning many groups and more than one LF group,
+constant pictures and white noise — each encoded, decoded by jxl-rs and
+compared sample for sample.
+
 ## Licence
 
-This crate: the Open Encoding Attribution License 1.0 ([LICENSE.md](LICENSE.md)).
+This crate, the encoder included: the Open Encoding Attribution License 1.0
+([LICENSE.md](LICENSE.md)).
 jxl-rs and the test files in `tests/data`: BSD-3-Clause, Copyright (c) the
 JPEG XL Project Authors ([tests/data/LICENSE.jxl-rs](tests/data/LICENSE.jxl-rs)),
 with Google's royalty-free patent grant for JPEG XL

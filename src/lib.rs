@@ -2,7 +2,8 @@
 //!
 //! JPEG XL decoding with a small, typed API, over
 //! [jxl-rs](https://github.com/libjxl/jxl-rs) — the JPEG XL project's own
-//! pure-Rust decoder. No C, no system libraries, no build script.
+//! pure-Rust decoder — and lossless encoding of this crate's own
+//! ([`encode_lossless`]). No C, no system libraries, no build script.
 //!
 //! ```no_run
 //! # fn main() -> jpegxl::Result<()> {
@@ -31,10 +32,15 @@
 //! so a caller with a colour manager converts from it, and one without can
 //! read [`Info::color`] for the common cases.
 //!
+//! **Encoding** is lossless: [`encode_lossless`] writes a bare codestream
+//! with one modular frame — gray, gray + alpha, RGB or RGBA, 8 or 16 bits a
+//! sample, sRGB — that decodes to exactly the samples it was given.
+//!
 //! **Orientation** is applied by default (the picture comes out upright, as a
 //! viewer shows it); [`DecodeOptions::apply_orientation`] turns that off and
 //! [`Info::orientation`] says what it was.
 
+mod encode;
 mod error;
 mod runner;
 
@@ -46,6 +52,7 @@ use jxl::api::{
 };
 use jxl::headers::extra_channels::ExtraChannel;
 
+pub use encode::{Samples, encode_lossless};
 pub use error::{Error, Result};
 
 /// The underlying decoder, for what this crate does not wrap.

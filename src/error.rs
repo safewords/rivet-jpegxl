@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-/// A JPEG XL decoding error.
+/// A JPEG XL decoding or encoding error.
 #[derive(Debug)]
 pub enum Error {
     /// The data is not a JPEG XL file: neither the bare codestream signature
@@ -16,6 +16,9 @@ pub enum Error {
     Unsupported(String),
     /// The picture is larger than the [`Limits`](crate::Limits) allow.
     LimitExceeded(String),
+    /// A picture the encoder was given does not add up (its size, its
+    /// sample count).
+    InvalidInput(String),
 }
 
 impl fmt::Display for Error {
@@ -28,6 +31,7 @@ impl fmt::Display for Error {
             Error::Truncated => f.write_str("the JPEG XL file ends before its picture does"),
             Error::Unsupported(m) => write!(f, "unsupported JPEG XL feature: {m}"),
             Error::LimitExceeded(m) => write!(f, "JPEG XL picture over the decoder's limits: {m}"),
+            Error::InvalidInput(m) => write!(f, "cannot encode the picture: {m}"),
         }
     }
 }

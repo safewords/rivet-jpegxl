@@ -22,3 +22,15 @@ XL implementation (https://github.com/libjxl/jxl-rs/blob/main/PATENTS).
 
 The test files in tests/data (*.jxl) are jxl-rs's test data, under the same
 BSD-3-Clause licence.
+
+------------------------------------------------------------------------------
+The encoder (src/encode)
+------------------------------------------------------------------------------
+
+The lossless encoder is this crate's own code. The JPEG XL standard (ISO/IEC
+18181) is not freely available, so the codestream's syntax it writes was
+learned from jxl-rs's decoder source (above, BSD-3-Clause): what the decoder
+reads, in what order, with what coding. No jxl-rs code is copied into it; its
+output is checked by decoding it with jxl-rs. Google's PATENTS grant is for
+its own JPEG XL implementations; this note makes no claim that it covers
+this encoder.
