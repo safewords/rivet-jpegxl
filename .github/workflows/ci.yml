@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Every job runs on the safewords org's self-hosted runners
+# (`safewords-runners`), pull requests from forks included: an outside
+# contributor's workflow runs only once a maintainer approves it. CI is
+# x86-64 Linux only.
+
+# id-token: a push to develop or main shows the compile cache's broker its
+# OIDC token to be allowed to write the cache (ci-cache-setup).
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  test:
+    name: tests
+    runs-on: safewords-runners
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Compile cache
+        # sccache on the cluster's Garage (safewords/helm-charts ci-cache):
+        # read-only for pull requests, written by pushes to develop / main.
+        run: if command -v ci-cache-setup >/dev/null; then ci-cache-setup; else echo "no compile cache on this runner"; fi
+      # The jxl-rs test files: every layout and depth, Exif, an animation,
+      # the limits, damaged input; once with Brotli-compressed boxes.
+      - run: cargo test --release
+      - run: cargo test --release --features brotli
+
+  msrv:
+    name: MSRV (1.99)
+    runs-on: safewords-runners
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.99
+      - name: Compile cache
+        run: if command -v ci-cache-setup >/dev/null; then ci-cache-setup; else echo "no compile cache on this runner"; fi
+      - run: cargo build --release
+
+  lint:
+    name: clippy, rustfmt and rustdoc
+    runs-on: safewords-runners
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Compile cache
+        run: if command -v ci-cache-setup >/dev/null; then ci-cache-setup; else echo "no compile cache on this runner"; fi
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo doc --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  # rivet's compile cache, warmed with this commit before rivet's submodule is
+  # bumped to it (safewords/rivet .github/workflows/codec-cache-warmup.yml).
+  # Never fails this workflow.
+  rivet-cache:
+    name: warm rivet's compile cache
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    permissions:
+      contents: read
+      id-token: write
+    uses: safewords/rivet-transcoder/.github/workflows/codec-cache-warmup.yml@develop
+    with:
+      crates: rivet-jpegxl
+      submodule: crates/jpegxl

@@ -1,0 +1,32 @@
+[package]
+name = "rivet-jpegxl"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license-file = "LICENSE.md"
+readme = "README.md"
+repository = "https://github.com/safewords/rivet-jpegxl"
+homepage = "https://github.com/safewords/rivet-jpegxl"
+documentation = "https://docs.rs/rivet-jpegxl"
+authors = ["Ely Erin Fox"]
+description = "JPEG XL decoding for the rivet transcoder: a small, typed API (probe, decode, frames; 8-bit, 16-bit or float pixels; the pixels' ICC profile, orientation, Exif, HDR intensity) over jxl-rs, the JPEG XL project's pure-Rust decoder. No C, no system libraries, no build script. Imported as `jpegxl`."
+keywords = ["jpeg-xl", "jxl", "image", "decoder"]
+categories = ["multimedia::images"]
+exclude = [".github/"]
+
+[lib]
+name = "jpegxl"
+
+[dependencies]
+# jxl-rs (https://github.com/libjxl/jxl-rs), the JPEG XL project's own
+# pure-Rust decoder, BSD-3-Clause. Default features: its SIMD kernels,
+# chosen at run time.
+jxl = "0.7.4"
+
+[features]
+default = []
+# Brotli-compressed metadata boxes (`brob`: a compressed Exif or XMP box).
+brotli = ["jxl/brotli"]
+
+[profile.test]
+opt-level = 2

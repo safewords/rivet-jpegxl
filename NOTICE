@@ -1,0 +1,24 @@
+rivet-jpegxl
+Copyright 2026 Ely Erin Fox
+
+This product is licensed under the Open Encoding Attribution License,
+Version 1.0 (see LICENSE.md). It is source-available, not open source: the
+attribution duty in §5 applies to commercial use; §4 requires this NOTICE to
+be carried forward with any distribution.
+
+------------------------------------------------------------------------------
+jxl-rs
+------------------------------------------------------------------------------
+
+This crate is a wrapper around jxl-rs (https://github.com/libjxl/jxl-rs, the
+`jxl` crate), the JPEG XL project's own Rust decoder, which does the decoding
+and is used under its BSD-3-Clause licence:
+
+    Copyright (c) the JPEG XL Project Authors. All rights reserved.
+
+The full licence text is in tests/data/LICENSE.jxl-rs. jxl-rs carries a
+PATENTS file granting a royalty-free patent licence from Google for its JPEG
+XL implementation (https://github.com/libjxl/jxl-rs/blob/main/PATENTS).
+
+The test files in tests/data (*.jxl) are jxl-rs's test data, under the same
+BSD-3-Clause licence.
