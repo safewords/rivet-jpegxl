@@ -1,6 +1,8 @@
 //! The lossless encoder, checked by decoding its output with jxl-rs and
 //! comparing every sample.
 
+#![allow(clippy::needless_range_loop)]
+
 use jpegxl::{Channels, Pixels, Samples, encode_lossless};
 
 /// A small deterministic generator (xorshift64*).
@@ -164,5 +166,78 @@ fn bad_input_is_an_error() {
             encode_lossless(w, h, Channels::Rgb, Samples::U8(&samples)),
             Err(jpegxl::Error::InvalidInput(_))
         ));
+    }
+}
+
+#[test]
+fn every_entropy_coder_setting() {
+    use jpegxl::encode::{
+        EntropyOptions, LosslessOptions, Lz77Mode, ModularOptions, encode_lossless_with,
+    };
+    let mut rng = Rng(77);
+    let mut pictures: Vec<(u32, u32, Channels, Vec<u8>)> = vec![
+        (
+            40,
+            30,
+            Channels::Rgb,
+            picture(40, 30, Channels::Rgb, 255, 3)
+                .into_iter()
+                .map(|v| v as u8)
+                .collect(),
+        ),
+        (
+            300,
+            270,
+            Channels::Rgba,
+            picture(300, 270, Channels::Rgba, 255, 4)
+                .into_iter()
+                .map(|v| v as u8)
+                .collect(),
+        ),
+        (16, 16, Channels::Gray, vec![9; 256]),
+    ];
+    // Repeats for LZ77 to find.
+    let tile: Vec<u8> = (0..64 * 3).map(|_| rng.next() as u8).collect();
+    let repeated: Vec<u8> = (0..64 * 64)
+        .flat_map(|i| {
+            [
+                tile[(i % 64) * 3],
+                tile[(i % 64) * 3 + 1],
+                tile[(i % 64) * 3 + 2],
+            ]
+        })
+        .collect();
+    pictures.push((64, 64, Channels::Rgb, repeated));
+    for ans in [false, true] {
+        for lz77 in [Lz77Mode::Off, Lz77Mode::Rle, Lz77Mode::Full] {
+            for clustering in [false, true] {
+                for optimize_uint in [false, true] {
+                    let options = LosslessOptions {
+                        modular: ModularOptions {
+                            entropy: EntropyOptions {
+                                ans,
+                                lz77,
+                                clustering,
+                                max_histograms: if clustering { 2 } else { 256 },
+                                optimize_uint,
+                            },
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    };
+                    for (w, h, channels, pixels) in &pictures {
+                        let jxl =
+                            encode_lossless_with(*w, *h, *channels, Samples::U8(pixels), &options)
+                                .unwrap_or_else(|e| panic!("{options:?}: {e}"));
+                        let image = jpegxl::decode(&jxl)
+                            .unwrap_or_else(|e| panic!("{options:?} {w}x{h} {channels:?}: {e}"));
+                        assert!(
+                            image.pixels == Pixels::U8(pixels.clone()),
+                            "{options:?} {w}x{h} {channels:?}: samples differ"
+                        );
+                    }
+                }
+            }
+        }
     }
 }

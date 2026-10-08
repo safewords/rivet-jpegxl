@@ -3,7 +3,7 @@
 
 /// One of a `U32` field's four distributions.
 #[derive(Clone, Copy)]
-pub(super) enum Dist {
+pub(crate) enum Dist {
     /// The value itself, no bits.
     Val(u32),
     /// `n` bits, plus `offset`.
@@ -19,19 +19,19 @@ const ENUM: [Dist; 4] = [
 ];
 
 #[derive(Default)]
-pub(super) struct BitWriter {
+pub(crate) struct BitWriter {
     bytes: Vec<u8>,
     acc: u64,
     pending: u32,
 }
 
 impl BitWriter {
-    pub(super) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
     /// The low `n` bits of `value` (`n` up to 32).
-    pub(super) fn write(&mut self, n: u32, value: u32) {
+    pub(crate) fn write(&mut self, n: u32, value: u32) {
         debug_assert!(n <= 32);
         debug_assert!(n == 32 || value >> n == 0, "{value} does not fit {n} bits");
         if n == 0 {
@@ -46,12 +46,12 @@ impl BitWriter {
         }
     }
 
-    pub(super) fn bit(&mut self, on: bool) {
+    pub(crate) fn bit(&mut self, on: bool) {
         self.write(1, u32::from(on));
     }
 
     /// A `U32` field: the first distribution that can hold `value`.
-    pub(super) fn u32(&mut self, value: u32, dists: [Dist; 4]) {
+    pub(crate) fn u32(&mut self, value: u32, dists: [Dist; 4]) {
         for (selector, dist) in dists.into_iter().enumerate() {
             let fits = match dist {
                 Dist::Val(v) => value == v,
@@ -71,22 +71,17 @@ impl BitWriter {
     }
 
     /// An enum field, by its value.
-    pub(super) fn enumeration(&mut self, value: u32) {
+    pub(crate) fn enumeration(&mut self, value: u32) {
         self.u32(value, ENUM);
     }
 
     /// A `U64` field holding 0 (`extensions`, frame `flags`).
-    pub(super) fn u64_zero(&mut self) {
-        self.write(2, 0);
-    }
-
-    /// An empty name.
-    pub(super) fn empty_string(&mut self) {
+    pub(crate) fn u64_zero(&mut self) {
         self.write(2, 0);
     }
 
     /// The `varint16` of the entropy-code headers.
-    pub(super) fn varint16(&mut self, value: u16) {
+    pub(crate) fn varint16(&mut self, value: u16) {
         if value == 0 {
             self.bit(false);
             return;
@@ -98,19 +93,36 @@ impl BitWriter {
     }
 
     /// Zeros up to the next byte boundary.
-    pub(super) fn pad_to_byte(&mut self) {
+    pub(crate) fn pad_to_byte(&mut self) {
         if self.pending > 0 {
             self.write(8 - self.pending, 0);
         }
     }
 
-    pub(super) fn append_bytes(&mut self, bytes: &[u8]) {
+    /// Bits written so far.
+    pub(crate) fn bits_written(&self) -> usize {
+        self.bytes.len() * 8 + self.pending as usize
+    }
+
+    /// Another writer's bits, after these.
+    pub(crate) fn append_bits(&mut self, other: &BitWriter) {
+        if self.pending == 0 {
+            self.bytes.extend_from_slice(&other.bytes);
+        } else {
+            for &b in &other.bytes {
+                self.write(8, u32::from(b));
+            }
+        }
+        self.write(other.pending, other.acc as u32);
+    }
+
+    pub(crate) fn append_bytes(&mut self, bytes: &[u8]) {
         debug_assert_eq!(self.pending, 0);
         self.bytes.extend_from_slice(bytes);
     }
 
     /// The bytes, the last one padded with zeros.
-    pub(super) fn finish(mut self) -> Vec<u8> {
+    pub(crate) fn finish(mut self) -> Vec<u8> {
         self.pad_to_byte();
         self.bytes
     }
