@@ -82,7 +82,7 @@ pub fn decode_raw(data: &[u8], o: &RawOptions) -> Result<Decoded, String> {
     decoder
         .set_pixel_format(JxlPixelFormat {
             color_type,
-            color_data_format: Some(f32_format.clone()),
+            color_data_format: Some(f32_format),
             extra_channel_format: vec![Some(f32_format); ne],
         })
         .map_err(|e| e.to_string())?;

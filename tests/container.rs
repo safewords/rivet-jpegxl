@@ -1,5 +1,7 @@
 //! The container, read back by jxl-rs.
 
+#![allow(clippy::needless_range_loop)]
+
 use jpegxl::encode::{Container, MetadataBox, encode_lossless, wrap};
 use jpegxl::{Channels, Pixels, Samples, Wrapping};
 

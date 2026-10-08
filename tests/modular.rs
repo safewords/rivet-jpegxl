@@ -1,6 +1,8 @@
 //! Modular coding, feature by feature, each output decoded by jxl-rs and
 //! compared sample for sample.
 
+#![allow(clippy::needless_range_loop)]
+
 use jpegxl::encode::{
     LosslessOptions, ModularOptions, Palette, Predictor, Rct, Samples, SqueezeStep, Transform,
     TreeMode, WeightedParams, encode_lossless_with,

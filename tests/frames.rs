@@ -1,5 +1,7 @@
 //! Frame features, each encoded and read back by jxl-rs.
 
+#![allow(clippy::needless_range_loop)]
+
 mod common;
 
 use common::{RawOptions, decode_raw, plane, to_int};
@@ -218,7 +220,7 @@ fn upsampling() {
             }
             let options = FrameOptions {
                 upsampling: up,
-                ec_upsampling: vec![up.max(2) / 2 * if up == 8 { 1 } else { 1 }],
+                ec_upsampling: vec![up.max(2) / 2],
                 ..Default::default()
             };
             let e = Encoder::new(info.clone()).unwrap();

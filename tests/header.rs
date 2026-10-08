@@ -1,5 +1,7 @@
 //! The image header's features, each encoded and read back by jxl-rs.
 
+#![allow(clippy::needless_range_loop)]
+
 mod common;
 
 use common::{RawOptions, decode_raw, plane, to_int};

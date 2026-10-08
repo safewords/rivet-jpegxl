@@ -9,11 +9,14 @@
 // Codec loops index several parallel arrays by position; iterators would
 // obscure the arithmetic the decoder's own loops are written in.
 #![allow(clippy::needless_range_loop)]
+// The format's constants are given to the precision the spec gives them.
+#![allow(clippy::excessive_precision)]
 
 mod bits;
 mod container;
 mod encoder;
 mod entropy;
+mod features;
 mod frame;
 mod header;
 mod icc;
@@ -23,6 +26,9 @@ use crate::{Channels, Error, Result};
 pub use container::{Container, MetadataBox, brotli_stored, wrap};
 pub use encoder::{Encoder, Frame, FrameContent, FrameOptions, ModularFrame, float_to_format_bits};
 pub use entropy::{EntropyOptions, Lz77Mode};
+pub use features::{
+    Features, Noise, Patch, PatchBlendMode, PatchBlending, PatchPlacement, QuantizedSpline, Splines,
+};
 pub use frame::{BlendMode, Blending, Crop, FrameType, Passes, Restoration};
 pub use header::{
     Animation, Chromaticity, ColorEncoding, ColorSpace, ColorSpec, ExtraChannel, ExtraChannelKind,

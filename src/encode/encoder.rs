@@ -2,8 +2,10 @@
 //! number of frames, each with every option the frame header has.
 
 use super::bits::BitWriter;
+use super::features::Features;
 use super::frame::{
-    Blending, Crop, FrameHeader, FrameType, Passes, Restoration, USE_LF_FRAME, write_toc,
+    Blending, Crop, FrameHeader, FrameType, Passes, Restoration, SKIP_ADAPTIVE_LF_SMOOTHING,
+    USE_LF_FRAME, write_toc,
 };
 use super::header::ImageInfo;
 use super::modular::{
@@ -47,6 +49,10 @@ pub struct FrameOptions {
     pub use_lf_frame: bool,
     /// The sections' order in the file (none: the natural order).
     pub section_order: Option<Vec<usize>>,
+    /// Patches, splines and noise.
+    pub features: Features,
+    /// Leave out adaptive LF smoothing (VarDCT).
+    pub skip_adaptive_lf_smoothing: bool,
 }
 
 impl Default for FrameOptions {
@@ -70,6 +76,8 @@ impl Default for FrameOptions {
             group_size_shift: 1,
             use_lf_frame: false,
             section_order: None,
+            features: Features::default(),
+            skip_adaptive_lf_smoothing: false,
         }
     }
 }
@@ -178,7 +186,13 @@ impl Encoder {
         let header = FrameHeader {
             frame_type: o.frame_type,
             modular: true,
-            flags: if o.use_lf_frame { USE_LF_FRAME } else { 0 },
+            flags: (if o.use_lf_frame { USE_LF_FRAME } else { 0 })
+                | (if o.skip_adaptive_lf_smoothing {
+                    SKIP_ADAPTIVE_LF_SMOOTHING
+                } else {
+                    0
+                })
+                | o.features.flags(),
             ycbcr: o.ycbcr,
             upsampling: o.upsampling,
             ec_upsampling,
@@ -270,7 +284,8 @@ impl Encoder {
     ) -> Result<CodedFrame> {
         match &frame.content {
             FrameContent::Modular(m) => {
-                let sections = code_modular(m, &header, &info, sixteen_bit)?;
+                let sections =
+                    code_modular(m, &header, &info, &frame.options.features, sixteen_bit)?;
                 let single = sections.len() == 1;
                 let order = frame.options.section_order.clone();
                 if single && order.is_some() {
@@ -316,6 +331,7 @@ fn code_modular(
     m: &ModularFrame,
     header: &FrameHeader,
     info: &ImageInfo,
+    features: &Features,
     sixteen_bit: &mut bool,
 ) -> Result<Vec<BitWriter>> {
     let shapes = channel_shapes(header, info);
@@ -378,6 +394,7 @@ fn code_modular(
 
     // LfGlobal: the LF quantisation, the global tree, the global image.
     let mut global = BitWriter::new();
+    features.write(&mut global, info.extra_channels.len())?;
     global.bit(true); // LfQuant: all_default
     coded.write_global_tree(&mut global);
     if has_channels {

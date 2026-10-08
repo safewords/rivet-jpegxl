@@ -743,7 +743,8 @@ fn write_size(w: &mut BitWriter, width: u32, height: u32) {
     let ratio = (1..=7)
         .find(|&r| ratio_width(height, r) == u64::from(width))
         .unwrap_or(0);
-    let small = height % 8 == 0 && width % 8 == 0 && height <= 256 && width <= 256;
+    let small =
+        height.is_multiple_of(8) && width.is_multiple_of(8) && height <= 256 && width <= 256;
     w.bit(small);
     if small {
         w.write(5, height / 8 - 1);
@@ -764,7 +765,7 @@ fn write_preview_size(w: &mut BitWriter, width: u32, height: u32) {
     let ratio = (1..=7)
         .find(|&r| ratio_width(height, r) == u64::from(width))
         .unwrap_or(0);
-    let div8 = height % 8 == 0 && width % 8 == 0;
+    let div8 = height.is_multiple_of(8) && width.is_multiple_of(8);
     let div8_dist = [
         Dist::Val(16),
         Dist::Val(32),

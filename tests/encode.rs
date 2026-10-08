@@ -1,6 +1,8 @@
 //! The lossless encoder, checked by decoding its output with jxl-rs and
 //! comparing every sample.
 
+#![allow(clippy::needless_range_loop)]
+
 use jpegxl::{Channels, Pixels, Samples, encode_lossless};
 
 /// A small deterministic generator (xorshift64*).
