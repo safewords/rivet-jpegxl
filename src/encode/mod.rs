@@ -166,3 +166,110 @@ pub fn encode_lossless_with(
     });
     encoder.finish()
 }
+
+/// Encode a picture lossily (VarDCT, XYB) at `distance` (1.0: about
+/// visually lossless; lower is better). The samples are sRGB (gray: the
+/// sRGB curve); an alpha channel is kept exactly.
+///
+/// ```
+/// let pixels = vec![128u8; 32 * 32 * 3];
+/// let jxl = jpegxl::encode_lossy(32, 32, jpegxl::Channels::Rgb, jpegxl::Samples::U8(&pixels), 1.0)?;
+/// assert_eq!(jpegxl::probe(&jxl)?.width, 32);
+/// # Ok::<(), jpegxl::Error>(())
+/// ```
+pub fn encode_lossy(
+    width: u32,
+    height: u32,
+    channels: Channels,
+    samples: Samples<'_>,
+    distance: f32,
+) -> Result<Vec<u8>> {
+    encode_lossy_with(
+        width,
+        height,
+        channels,
+        samples,
+        &VarDctOptions {
+            distance,
+            ..Default::default()
+        },
+    )
+}
+
+/// [`encode_lossy`] with every VarDCT option.
+pub fn encode_lossy_with(
+    width: u32,
+    height: u32,
+    channels: Channels,
+    samples: Samples<'_>,
+    options: &VarDctOptions,
+) -> Result<Vec<u8>> {
+    if width == 0 || height == 0 || width > MAX_DIMENSION || height > MAX_DIMENSION {
+        return Err(Error::InvalidInput(format!(
+            "{width}x{height}: each side must be 1 to {MAX_DIMENSION}"
+        )));
+    }
+    let count = channels.count();
+    let (w, h) = (width as usize, height as usize);
+    if samples.len() != w * h * count {
+        return Err(Error::InvalidInput(format!(
+            "{} samples for {width}x{height} {channels:?}, which takes {}",
+            samples.len(),
+            w * h * count
+        )));
+    }
+    let bits = samples.bits_per_sample();
+    let max = ((1u32 << bits) - 1) as f32;
+    let mut info = ImageInfo::new(width, height);
+    info.xyb = true;
+    info.format = SampleFormat::Int(bits);
+    if channels.is_gray() {
+        info.color = ColorSpec::Encoding(ColorEncoding::GRAY);
+    }
+    if channels.has_alpha() {
+        info.extra_channels
+            .push(ExtraChannel::alpha(SampleFormat::Int(bits)));
+    }
+    let xyb = Xyb::new(&OpsinInverse::default(), 255.0);
+    // The sRGB curve as a table over the sample values.
+    let curve: Vec<f32> = (0..=max as u32)
+        .map(|v| srgb_to_linear(v as f32 / max))
+        .collect();
+    let gray = channels.is_gray();
+    let mut color = vec![vec![0f32; w * h]; 3];
+    for i in 0..w * h {
+        let at = |c: usize| curve[samples.get(i * count + c) as usize];
+        let lin = if gray {
+            let g = at(0);
+            [g, g, g]
+        } else {
+            [at(0), at(1), at(2)]
+        };
+        let v = xyb.from_linear(lin);
+        for c in 0..3 {
+            color[c][i] = v[c];
+        }
+    }
+    let extra = if channels.has_alpha() {
+        vec![
+            (0..w * h)
+                .map(|i| samples.get(i * count + count - 1))
+                .collect(),
+        ]
+    } else {
+        Vec::new()
+    };
+    let mut encoder = Encoder::new(info)?;
+    encoder.add_frame(Frame {
+        options: FrameOptions {
+            restoration: Restoration::DEFAULT,
+            ..Default::default()
+        },
+        content: FrameContent::VarDct(VarDctFrame {
+            color,
+            extra,
+            options: options.clone(),
+        }),
+    });
+    encoder.finish()
+}

@@ -604,3 +604,190 @@ fn rgb_vardct_crops_upsampling_and_features() {
     let q = psnr(&a, &b);
     assert!(q > 35.0, "around the crop: PSNR {q}");
 }
+
+/// 8x8 means of a plane.
+fn means(p: &[f32], w: usize, h: usize) -> (Vec<f32>, usize, usize) {
+    let (lw, lh) = (w.div_ceil(8), h.div_ceil(8));
+    let mut out = vec![0f32; lw * lh];
+    for by in 0..lh {
+        for bx in 0..lw {
+            let mut s = 0.0;
+            for y in by * 8..by * 8 + 8 {
+                for x in bx * 8..bx * 8 + 8 {
+                    s += p[y.min(h - 1) * w + x.min(w - 1)];
+                }
+            }
+            out[by * lw + bx] = s / 64.0;
+        }
+    }
+    (out, lw, lh)
+}
+
+#[test]
+fn two_lf_levels() {
+    use jpegxl::encode::{FrameType, ModularFrame};
+    let (w, h) = (520usize, 300usize);
+    let pixels: Vec<u8> = (0..w * h)
+        .flat_map(|i| {
+            let (x, y) = (i % w, i / w);
+            [(x / 3) as u8, (y / 2) as u8, ((x + y) / 4) as u8]
+        })
+        .collect();
+    let planes = xyb_planes(&pixels, w, h);
+    // Level 1: the 8x8 means; level 2: their 8x8 means.
+    let lf1: Vec<Vec<f32>> = (0..3).map(|c| means(&planes[c], w, h).0).collect();
+    let (l1w, l1h) = (w.div_ceil(8), h.div_ceil(8));
+    let lf2: Vec<Vec<f32>> = (0..3).map(|c| means(&lf1[c], l1w, l1h).0).collect();
+    let (l2w, l2h) = (l1w.div_ceil(8), l1h.div_ceil(8));
+    let scale = [1.0f32 / 65536.0, 1.0 / 16384.0, 1.0 / 16384.0];
+    let mut q2 = vec![vec![0i32; l2w * l2h]; 3];
+    for i in 0..l2w * l2h {
+        q2[0][i] = (lf2[1][i] / scale[1]).round() as i32;
+        q2[1][i] = (lf2[0][i] / scale[0]).round() as i32;
+        q2[2][i] = ((lf2[2][i] - lf2[1][i]) / scale[2]).round() as i32;
+    }
+    let mut info = ImageInfo::new(w as u32, h as u32);
+    info.xyb = true;
+    let mut e = Encoder::new(info).unwrap();
+    e.add_frame(Frame {
+        options: FrameOptions {
+            frame_type: FrameType::Lf { level: 2 },
+            ..Default::default()
+        },
+        content: FrameContent::Modular(ModularFrame {
+            lf_quant: Some(scale),
+            ..ModularFrame::new(q2, vec![])
+        }),
+    });
+    e.add_frame(Frame {
+        options: FrameOptions {
+            frame_type: FrameType::Lf { level: 1 },
+            use_lf_frame: true,
+            ..Default::default()
+        },
+        content: FrameContent::VarDct(VarDctFrame {
+            color: lf1,
+            extra: vec![],
+            options: fine(),
+        }),
+    });
+    e.add_frame(Frame {
+        options: FrameOptions {
+            use_lf_frame: true,
+            ..Default::default()
+        },
+        content: FrameContent::VarDct(VarDctFrame {
+            color: planes,
+            extra: vec![],
+            options: fine(),
+        }),
+    });
+    let q = psnr(&pixels, &decode_u8(&e.finish().unwrap()));
+    assert!(q > 38.0, "PSNR {q}");
+}
+
+#[test]
+fn custom_opsin_and_upsampling_kernels() {
+    use jpegxl::encode::UpsamplingWeights;
+    let (w, h) = (64usize, 48usize);
+    let pixels: Vec<u8> = (0..w * h)
+        .flat_map(|i| {
+            let (x, y) = (i % w, i / w);
+            [(x * 3) as u8, (y * 4) as u8, 100]
+        })
+        .collect();
+    let mut opsin = OpsinInverse::default();
+    opsin.opsin_biases = [-0.003; 3];
+    opsin.inverse_matrix[0] *= 1.01;
+    let mut info = ImageInfo::new(w as u32, h as u32);
+    info.xyb = true;
+    info.opsin_inverse = Some(opsin);
+    let mut w4 = vec![0.0f32; 55];
+    w4[10] = 0.2;
+    w4[11] = 0.3;
+    info.upsampling_weights = UpsamplingWeights {
+        weights2: None,
+        weights4: Some(w4),
+        weights8: Some(vec![0.01; 210]),
+    };
+    let xyb = Xyb::new(&opsin, 255.0);
+    let mut color = vec![vec![0f32; w * h]; 3];
+    for i in 0..w * h {
+        let lin = [0, 1, 2].map(|c| srgb_to_linear(f32::from(pixels[i * 3 + c]) / 255.0));
+        let v = xyb.from_linear(lin);
+        for c in 0..3 {
+            color[c][i] = v[c];
+        }
+    }
+    let mut e = Encoder::new(info).unwrap();
+    e.add_frame(Frame {
+        options: FrameOptions::default(),
+        content: FrameContent::VarDct(VarDctFrame {
+            color,
+            extra: vec![],
+            options: fine(),
+        }),
+    });
+    let q = psnr(&pixels, &decode_u8(&e.finish().unwrap()));
+    assert!(q > 38.0, "PSNR {q}");
+}
+
+#[test]
+fn encode_lossy_layouts() {
+    let (w, h) = (90usize, 70usize);
+    let smooth = |c: usize, i: usize| -> u32 {
+        let (x, y) = (i % w, i / w);
+        ((x * (c + 2) + y * 3) % 256) as u32
+    };
+    for channels in [
+        jpegxl::Channels::Gray,
+        jpegxl::Channels::GrayAlpha,
+        jpegxl::Channels::Rgb,
+        jpegxl::Channels::Rgba,
+    ] {
+        let n = channels.count();
+        let pixels: Vec<u8> = (0..w * h)
+            .flat_map(|i| {
+                (0..n).map(move |c| {
+                    if channels.has_alpha() && c == n - 1 {
+                        (i % 251) as u8
+                    } else {
+                        smooth(c, i) as u8
+                    }
+                })
+            })
+            .collect();
+        let jxl = jpegxl::encode_lossy(
+            w as u32,
+            h as u32,
+            channels,
+            jpegxl::Samples::U8(&pixels),
+            0.5,
+        )
+        .unwrap();
+        let image = jpegxl::decode_with(
+            &jxl,
+            &jpegxl::DecodeOptions {
+                sample_type: SampleType::U8,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(image.channels, channels);
+        let Pixels::U8(back) = image.pixels else {
+            unreachable!()
+        };
+        let color_of = |v: &[u8]| -> Vec<u8> {
+            v.chunks(n)
+                .flat_map(|p| p[..if channels.has_alpha() { n - 1 } else { n }].to_vec())
+                .collect()
+        };
+        let q = psnr(&color_of(&pixels), &color_of(&back));
+        assert!(q > 34.0, "{channels:?}: PSNR {q}");
+        if channels.has_alpha() {
+            let a: Vec<u8> = pixels.chunks(n).map(|p| p[n - 1]).collect();
+            let b: Vec<u8> = back.chunks(n).map(|p| p[n - 1]).collect();
+            assert_eq!(a, b, "{channels:?}: alpha");
+        }
+    }
+}
