@@ -35,8 +35,10 @@ pub struct FrameOptions {
     /// Per extra channel (empty: all 1).
     pub ec_upsampling: Vec<u32>,
     pub restoration: Restoration,
-    /// The samples are YCbCr, each channel's `jpeg_upsampling` (0: full,
-    /// 1: 2x2, 2: 2x1, 3: 1x2), channels in the order Cb, Y, Cr.
+    /// The samples are YCbCr (channels Cb, Y, Cr; Y less 128/255 of the
+    /// range, chroma centred on 0), each channel's `jpeg_upsampling` as JPEG
+    /// sampling factors: 0 the lowest, 1 twice that both ways, 2 twice
+    /// across, 3 twice down — 4:2:0 is `[0, 1, 0]`, 4:2:2 `[0, 2, 0]`.
     pub ycbcr: Option<[u32; 3]>,
     pub passes: Passes,
     /// Groups of `128 << group_size_shift` pixels (modular frames).
