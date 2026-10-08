@@ -85,13 +85,32 @@ impl Default for FrameOptions {
 /// A modular frame's samples: each channel row by row at its coded size
 /// (see [`Encoder::channel_sizes`]), integers in the channel's sample
 /// format (a float format's bit patterns).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct ModularFrame {
     pub color: Vec<Vec<i32>>,
     pub extra: Vec<Vec<i32>>,
     pub options: ModularOptions,
     /// The global transforms, in order.
     pub transforms: Vec<Transform>,
+    /// Transforms applied in each group's own stream, after the global
+    /// ones.
+    pub group_transforms: Vec<Transform>,
+    /// Lossy: squeeze residuals rounded to steps of this (see
+    /// `quantize_residuals`).
+    pub residual_quantization: Option<f32>,
+    /// The LF quantisation factors (for an XYB image: the X, Y, B scales
+    /// its integer samples are multiplied by).
+    pub lf_quant: Option<[f32; 3]>,
+}
+
+impl ModularFrame {
+    pub fn new(color: Vec<Vec<i32>>, extra: Vec<Vec<i32>>) -> Self {
+        ModularFrame {
+            color,
+            extra,
+            ..Default::default()
+        }
+    }
 }
 
 /// What a frame holds.
@@ -304,6 +323,16 @@ impl Encoder {
     }
 }
 
+/// The colour channels a frame codes: one for gray, unless the samples
+/// are XYB or YCbCr.
+pub(crate) fn color_channels(header: &FrameHeader, info: &ImageInfo) -> usize {
+    if info.color.is_gray() && !info.xyb && header.ycbcr.is_none() {
+        1
+    } else {
+        3
+    }
+}
+
 /// Each channel's coded (width, height, shift): colour, then extra.
 pub(crate) fn channel_shapes(
     header: &FrameHeader,
@@ -311,7 +340,7 @@ pub(crate) fn channel_shapes(
 ) -> Vec<(usize, usize, (u32, u32))> {
     let (w, h) = header.size(info);
     let mut out = Vec::new();
-    for c in 0..info.color_channels() {
+    for c in 0..color_channels(header, info) {
         let (sx, sy) = header.chroma_shift(c);
         out.push((w.div_ceil(1 << sx), h.div_ceil(1 << sy), (sx, sy)));
     }
@@ -335,7 +364,7 @@ fn code_modular(
     sixteen_bit: &mut bool,
 ) -> Result<Vec<BitWriter>> {
     let shapes = channel_shapes(header, info);
-    let nc = info.color_channels();
+    let nc = color_channels(header, info);
     if m.color.len() != nc || m.extra.len() != info.extra_channels.len() {
         return Err(Error::InvalidInput(format!(
             "{} colour and {} extra channels for an image of {nc} and {}",
@@ -363,6 +392,9 @@ fn code_modular(
             .map_err(Error::InvalidInput)?;
         *sixteen_bit &= modular::fits_i16(&channels);
     }
+    if let Some(q) = m.residual_quantization {
+        modular::quantize_residuals(&mut channels, q);
+    }
 
     let (gx, gy) = header.groups(info);
     let (lx, ly) = header.lf_groups(info);
@@ -377,7 +409,24 @@ fn code_modular(
             .collect(),
         num_lf_groups: lx * ly,
     };
-    let split = ImageStreams::split(channels, m.transforms.clone(), &layout);
+    let mut split = ImageStreams::split(channels, m.transforms.clone(), &layout);
+    if !m.group_transforms.is_empty() {
+        for stream in split.hf.iter_mut().flatten() {
+            if stream
+                .channels
+                .iter()
+                .all(|c| c.width == 0 || c.height == 0)
+            {
+                continue;
+            }
+            for t in &m.group_transforms {
+                t.apply(&mut stream.channels, bits, m.options.weighted)
+                    .map_err(|e| Error::InvalidInput(format!("a group transform: {e}")))?;
+            }
+            *sixteen_bit &= modular::fits_i16(&stream.channels);
+            stream.transforms = m.group_transforms.clone();
+        }
+    }
     let has_channels = !shapes.is_empty();
     let mut streams: Vec<ModularStream> = vec![split.global];
     let num_lf = split.lf.len();
@@ -395,7 +444,15 @@ fn code_modular(
     // LfGlobal: the LF quantisation, the global tree, the global image.
     let mut global = BitWriter::new();
     features.write(&mut global, info.extra_channels.len())?;
-    global.bit(true); // LfQuant: all_default
+    match m.lf_quant {
+        None => global.bit(true), // LfQuant: all_default
+        Some(q) => {
+            global.bit(false);
+            for v in q {
+                crate::encode::header::write_f16(&mut global, v * 128.0)?;
+            }
+        }
+    }
     coded.write_global_tree(&mut global);
     if has_channels {
         coded.write_stream(&mut global, 0);

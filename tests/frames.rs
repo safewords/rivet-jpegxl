@@ -17,6 +17,7 @@ fn modular(color: Vec<Vec<i32>>, extra: Vec<Vec<i32>>) -> FrameContent {
         extra,
         options: ModularOptions::default(),
         transforms: Vec::new(),
+        ..Default::default()
     })
 }
 
@@ -267,6 +268,7 @@ fn passes_section_order_and_group_sizes() {
                     extra: vec![],
                     options: ModularOptions::default(),
                     transforms,
+                    ..Default::default()
                 }),
             }],
         );

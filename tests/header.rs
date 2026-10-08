@@ -18,6 +18,7 @@ fn modular(color: Vec<Vec<i32>>, extra: Vec<Vec<i32>>) -> FrameContent {
         extra,
         options: ModularOptions::default(),
         transforms: Vec::new(),
+        ..Default::default()
     })
 }
 

@@ -21,6 +21,7 @@ mod frame;
 mod header;
 mod icc;
 mod modular;
+mod xyb;
 
 use crate::{Channels, Error, Result};
 pub use container::{Container, MetadataBox, brotli_stored, wrap};
@@ -38,6 +39,7 @@ pub use header::{
 pub use modular::{
     ModularOptions, Palette, Predictor, Rct, SqueezeStep, Transform, TreeMode, WeightedParams,
 };
+pub use xyb::{Xyb, srgb_to_linear};
 
 /// Options for lossless encoding.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -154,6 +156,7 @@ pub fn encode_lossless_with(
             extra: (nc..count).map(plane).collect(),
             options: options.modular.clone(),
             transforms: options.transforms.clone(),
+            ..Default::default()
         }),
     });
     encoder.finish()

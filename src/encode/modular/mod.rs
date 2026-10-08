@@ -27,6 +27,8 @@ pub struct Channel {
     /// meta channel (a palette).
     pub shift: Option<(u32, u32)>,
     pub samples: Vec<i32>,
+    /// A squeeze residual (detail that lossy coding may quantise).
+    pub residual: bool,
 }
 
 impl Channel {
@@ -37,6 +39,7 @@ impl Channel {
             height,
             shift,
             samples,
+            residual: false,
         }
     }
 
@@ -55,7 +58,9 @@ impl Channel {
         for r in y..y + h {
             samples.extend_from_slice(&self.samples[r * self.width + x..r * self.width + x + w]);
         }
-        Channel::new(w, h, self.shift, samples)
+        let mut c = Channel::new(w, h, self.shift, samples);
+        c.residual = self.residual;
+        c
     }
 }
 
@@ -643,6 +648,26 @@ impl ImageStreams {
             },
             lf,
             hf,
+        }
+    }
+}
+
+/// Round each squeeze residual to a multiple of a step: `base` for the
+/// finest detail, halving with each coarser level (never below 1). The
+/// decoder reconstructs from the rounded residuals; leaf multipliers then
+/// code them for what they are.
+pub(crate) fn quantize_residuals(channels: &mut [Channel], base: f32) {
+    for c in channels.iter_mut().filter(|c| c.residual) {
+        let (sx, sy) = c.shift.unwrap_or((0, 0));
+        let level = (sx + sy).max(1) - 1;
+        let q = (f64::from(base) / f64::from(1u32 << level.min(30)))
+            .round()
+            .max(1.0) as i64;
+        if q > 1 {
+            for v in c.samples.iter_mut() {
+                let r = (*v as f64 / q as f64).round() as i64 * q;
+                *v = r.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+            }
         }
     }
 }

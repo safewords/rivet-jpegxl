@@ -332,6 +332,11 @@ fn squeeze_line(line: &[i32]) -> (Vec<i32>, Vec<i32>) {
     (avg, res)
 }
 
+fn residual(mut c: Channel) -> Channel {
+    c.residual = true;
+    c
+}
+
 fn apply_squeeze(channels: &mut Vec<Channel>, s: &SqueezeStep) -> Result<(), String> {
     let begin = s.begin_channel as usize;
     let end = begin + s.num_channels as usize;
@@ -370,7 +375,7 @@ fn apply_squeeze(channels: &mut Vec<Channel>, s: &SqueezeStep) -> Result<(), Str
             }
             (
                 Channel::new(aw, h, shift, avg),
-                Channel::new(rw, h, shift, res),
+                residual(Channel::new(rw, h, shift, res)),
             )
         } else {
             let (ah, rh) = (h.div_ceil(2), h / 2);
@@ -391,7 +396,7 @@ fn apply_squeeze(channels: &mut Vec<Channel>, s: &SqueezeStep) -> Result<(), Str
             }
             (
                 Channel::new(w, ah, shift, avg),
-                Channel::new(w, rh, shift, res),
+                residual(Channel::new(w, rh, shift, res)),
             )
         };
         channels[c] = avg;

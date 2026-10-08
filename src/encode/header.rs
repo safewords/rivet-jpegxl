@@ -510,10 +510,6 @@ impl ImageInfo {
         }
     }
 
-    pub(crate) fn color_channels(&self) -> usize {
-        if self.color.is_gray() { 1 } else { 3 }
-    }
-
     /// Validate.
     pub(crate) fn check(&self) -> Result<()> {
         let bad = |m: String| Err(Error::InvalidInput(m));
