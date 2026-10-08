@@ -143,11 +143,11 @@ fn layout_blocks(
 ) -> Result<Vec<VarBlock>> {
     let mut taken = vec![false; bw * bh];
     let mut out = Vec::new();
-    let mut place = |bx: usize,
-                     by: usize,
-                     t: TransformType,
-                     taken: &mut [bool],
-                     out: &mut Vec<VarBlock>|
+    let place = |bx: usize,
+                 by: usize,
+                 t: TransformType,
+                 taken: &mut [bool],
+                 out: &mut Vec<VarBlock>|
      -> bool {
         let (cx, cy) = t.covered();
         if bx + cx > bw || by + cy > bh {
@@ -263,6 +263,51 @@ fn pad(plane: &[f32], w: usize, h: usize, pw: usize, ph: usize) -> Vec<f32> {
     out
 }
 
+/// The decoder's Gaborish smoothing (3x3, mirrored at the edges).
+fn gaborish(p: &[f32], w: usize, h: usize, w1: f32, w2: f32) -> Vec<f32> {
+    let total = 1.0 + 4.0 * w1 + 4.0 * w2;
+    let (k0, k1, k2) = (1.0 / total, w1 / total, w2 / total);
+    let at = |x: isize, y: isize| {
+        let mx = if x < 0 {
+            -x - 1
+        } else if x >= w as isize {
+            2 * w as isize - x - 1
+        } else {
+            x
+        };
+        let my = if y < 0 {
+            -y - 1
+        } else if y >= h as isize {
+            2 * h as isize - y - 1
+        } else {
+            y
+        };
+        p[my as usize * w + mx as usize]
+    };
+    let mut out = vec![0f32; w * h];
+    for y in 0..h as isize {
+        for x in 0..w as isize {
+            out[y as usize * w + x as usize] = k0 * at(x, y)
+                + k1 * (at(x - 1, y) + at(x + 1, y) + at(x, y - 1) + at(x, y + 1))
+                + k2 * (at(x - 1, y - 1) + at(x + 1, y - 1) + at(x - 1, y + 1) + at(x + 1, y + 1));
+        }
+    }
+    out
+}
+
+/// What Gaborish turns back into `p`: by fixed-point iteration (the
+/// filter is near the identity).
+fn inverse_gaborish(p: &[f32], w: usize, h: usize, w1: f32, w2: f32) -> Vec<f32> {
+    let mut x = p.to_vec();
+    for _ in 0..8 {
+        let g = gaborish(&x, w, h, w1, w2);
+        for i in 0..x.len() {
+            x[i] += p[i] - g[i];
+        }
+    }
+    x
+}
+
 /// The decoder's reconstruction of a quantised coefficient (in steps).
 #[inline]
 fn dequant_bias(q: i32, c: usize, biases: &[f32; 4]) -> f32 {
@@ -352,14 +397,27 @@ pub(crate) fn code_vardct(
             )));
         }
         let (pw, ph) = ((bw >> sx) * 8, (bh >> sy) * 8);
-        planes.push(pad(&f.color[c], cw, ch, pw, ph));
+        let mut p = pad(&f.color[c], cw, ch, pw, ph);
+        // The decoder smooths with Gaborish: sharpen to match.
+        if let Some(weights) = header.restoration.gaborish {
+            let w = weights.unwrap_or([
+                0.115169525,
+                0.061248592,
+                0.115169525,
+                0.061248592,
+                0.115169525,
+                0.061248592,
+            ]);
+            p = inverse_gaborish(&p, pw, ph, w[2 * c], w[2 * c + 1]);
+        }
+        planes.push(p);
         pstride[c] = pw;
     }
 
     let mut blocks = layout_blocks(o, bw, bh, &planes[1], pstride[1], is444)?;
 
     // Quantisers.
-    let scale = 1.12 * o.distance;
+    let scale = 0.25 * o.distance;
     let base_quant = 64u32;
     let global_scale = o.global_scale.unwrap_or_else(|| {
         ((65536.0 / (scale * base_quant as f32)).round() as u32).clamp(1, 73728)
@@ -615,7 +673,7 @@ pub(crate) fn code_vardct(
         let log_nb = num_blocks.ilog2() as usize;
         let shape = b.t.shape();
         // The LF bucket from the quantised LF at this block.
-        let lf_idx = if bcm.num_lf_contexts() > 1 {
+        let lf_idx = if bcm.num_lf_contexts() > 1 && !header_uses_lf_frame(header) {
             let at = |c: usize| {
                 let (sx, sy) = shifts[c];
                 qlf[c][(b.by >> sy) * cbw[c] + (b.bx >> sx)]

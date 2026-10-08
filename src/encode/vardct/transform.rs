@@ -255,6 +255,7 @@ fn resample_scale(k: usize, n: usize) -> f64 {
 
 /// The LLF a plain DCT gets from its LF samples (`cy` rows of `cx`), as a
 /// wide-stored `min x max` corner.
+#[cfg_attr(not(test), allow(dead_code))]
 fn llf_from_lf(lf: &[f64], cx: usize, cy: usize) -> Vec<f64> {
     // DCT the LF samples, then scale each frequency.
     let mut d = lf.to_vec();
@@ -285,6 +286,8 @@ fn lf_from_llf(llf: &[f64], cx: usize, cy: usize) -> Vec<f64> {
 
 /// The inverse transform: pixels (row major, `8 cy` by `8 cx`) from
 /// coefficients (wide-stored) and LF (`cy` rows of `cx`).
+/// (The decoder's; the encoder checks its forward transform with it.)
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn inverse(t: TransformType, coeffs: &[f32], lf: &[f32]) -> Vec<f32> {
     let (cx, cy) = t.covered();
     let (w, h) = (cx * 8, cy * 8);
@@ -610,6 +613,7 @@ fn invert(a: &[f64], n: usize) -> Vec<f64> {
 
 /// The AFV corner basis, as the format defines it.
 #[rustfmt::skip]
+#[allow(clippy::approx_constant)]
 const AFV_BASIS: [f64; 256] = include!("afv_basis.in");
 
 #[cfg(test)]

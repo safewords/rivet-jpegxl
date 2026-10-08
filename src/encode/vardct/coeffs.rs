@@ -177,7 +177,7 @@ impl BlockContextMap {
         self.num_contexts() * NON_ZERO_BUCKETS + ZERO_DENSITY_CONTEXT_COUNT * block_context
     }
 
-    pub fn write(&self, w: &mut BitWriter, entropy: &EntropyOptions) -> Result<()> {
+    pub(crate) fn write(&self, w: &mut BitWriter, entropy: &EntropyOptions) -> Result<()> {
         if *self == BlockContextMap::default() {
             w.bit(true);
             return Ok(());
