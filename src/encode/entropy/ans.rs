@@ -249,7 +249,7 @@ fn write_complex(w: &mut BitWriter, dist: &[u32], alphabet: usize, shift: u32) {
             j += 1;
         }
         // A repeat may not follow the left out symbol, which reads as 0.
-        if j - i - 1 >= 4 && i != omit {
+        if j - i > 4 && i != omit {
             runs[i] = j - i - 1;
         }
         i = j;
@@ -284,7 +284,6 @@ fn write_complex(w: &mut BitWriter, dist: &[u32], alphabet: usize, shift: u32) {
 /// For each symbol, the decoder's state positions (0..4096) of its slots,
 /// in slot order — from the alias table the decoder builds.
 fn alias_slots(dist: &[u32], log_alpha_size: u32) -> Vec<Vec<u16>> {
-    let table_size = dist.len();
     let log_bucket_size = LOG_SUM_PROBS - log_alpha_size;
     let bucket_size = 1u32 << log_bucket_size;
     let mut slots: Vec<Vec<u16>> = dist.iter().map(|&d| vec![0; d as usize]).collect();
@@ -333,8 +332,7 @@ fn alias_slots(dist: &[u32], log_alpha_size: u32) -> Vec<Vec<u16>> {
         }
     }
     // Walk every state position as the decoder reads it.
-    for i in 0..table_size {
-        let b = &buckets[i];
+    for (i, b) in buckets.iter().enumerate() {
         let full = b.alias_cutoff == bucket_size;
         for pos in 0..bucket_size {
             let idx = (i as u32) << log_bucket_size | pos;
