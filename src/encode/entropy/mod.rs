@@ -12,7 +12,7 @@ mod prefix;
 
 use crate::encode::bits::{BitWriter, Dist};
 use ans::{AnsTable, FINAL_STATE};
-pub(crate) use hybrid::{HybridUint, pack_signed};
+pub(crate) use hybrid::{HybridUint, ceil_log2, pack_signed};
 pub use lz77::Lz77Mode;
 use prefix::PrefixCode;
 

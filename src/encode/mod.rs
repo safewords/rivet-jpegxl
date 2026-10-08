@@ -1,24 +1,32 @@
-//! Lossless JPEG XL encoding: a bare codestream with one modular frame.
+//! JPEG XL encoding, this crate's own.
 //!
-//! Every sample is coded exactly — predicted from its neighbours, the
-//! residual prefix coded — so decoding gives back the same samples. The
-//! colour space is sRGB (or gray with the sRGB transfer curve); the alpha,
-//! when there is one, is straight.
+//! [`Encoder`] writes a codestream with every feature its header and frames
+//! can carry: any sample format, extra channels of every kind, named colour
+//! encodings or ICC profiles, orientation, previews, animation, and frames
+//! with crops, blending, references, upsampling and passes.
+//! [`encode_lossless`] is the short way to a lossless still.
 
 // Codec loops index several parallel arrays by position; iterators would
 // obscure the arithmetic the decoder's own loops are written in.
 #![allow(clippy::needless_range_loop)]
 
 mod bits;
+mod encoder;
 mod entropy;
-mod headers;
+mod frame;
+mod header;
+mod icc;
 mod modular;
 
 use crate::{Channels, Error, Result};
-use bits::BitWriter;
+pub use encoder::{Encoder, Frame, FrameContent, FrameOptions, ModularFrame, float_to_format_bits};
 pub use entropy::{EntropyOptions, Lz77Mode};
-use headers::ImageHeader;
-use modular::{Channel, ImageStreams, Layout, ModularCoded};
+pub use frame::{BlendMode, Blending, Crop, FrameType, Passes, Restoration};
+pub use header::{
+    Animation, Chromaticity, ColorEncoding, ColorSpace, ColorSpec, ExtraChannel, ExtraChannelKind,
+    ImageInfo, OpsinInverse, Primaries, RenderingIntent, SampleFormat, ToneMapping,
+    TransferFunction, UpsamplingWeights, WhitePoint,
+};
 pub use modular::{
     ModularOptions, Palette, Predictor, Rct, SqueezeStep, Transform, TreeMode, WeightedParams,
 };
@@ -117,89 +125,28 @@ pub fn encode_lossless_with(
     }
 
     let (w, h) = (width as usize, height as usize);
-    let mut coded: Vec<Channel> = (0..count)
-        .map(|c| {
-            Channel::new(
-                w,
-                h,
-                Some((0, 0)),
-                (0..w * h).map(|i| samples.get(i * count + c)).collect(),
-            )
-        })
-        .collect();
-    let bits = samples.bits_per_sample();
-    let mut sixteen_bit = bits <= 12 && modular::fits_i16(&coded);
-    for t in &options.transforms {
-        t.apply(&mut coded, bits, options.modular.weighted)
-            .map_err(Error::InvalidInput)?;
-        sixteen_bit &= modular::fits_i16(&coded);
+    let mut info = ImageInfo::new(width, height);
+    info.format = SampleFormat::Int(samples.bits_per_sample());
+    if channels.is_gray() {
+        info.color = ColorSpec::Encoding(ColorEncoding::GRAY);
     }
-
-    let gd = headers::GROUP_DIM as usize;
-    let layout = Layout {
-        group_dim: gd,
-        groups_x: w.div_ceil(gd),
-        groups_y: h.div_ceil(gd),
-        lf_groups_x: w.div_ceil(gd * 8),
-        lf_groups_y: h.div_ceil(gd * 8),
-        pass_shifts: vec![(0, 2)],
-        num_lf_groups: w.div_ceil(gd * 8) * h.div_ceil(gd * 8),
-    };
-    let split = ImageStreams::split(coded, options.transforms.clone(), &layout);
-    let mut streams = vec![split.global];
-    streams.extend(split.lf);
-    for pass in split.hf {
-        streams.extend(pass);
+    if channels.has_alpha() {
+        info.extra_channels
+            .push(ExtraChannel::alpha(SampleFormat::Int(
+                samples.bits_per_sample(),
+            )));
     }
-    let size_limit = (1024 + w * h * count / 16).min(1 << 22);
-    let modular = ModularCoded::new(&streams, &options.modular, size_limit);
-
-    let mut out = BitWriter::new();
-    ImageHeader {
-        width,
-        height,
-        bits_per_sample: bits,
-        gray: channels.is_gray(),
-        alpha: channels.has_alpha(),
-        modular_16bit: sixteen_bit,
-    }
-    .write(&mut out);
-    headers::write_frame_header(&mut out, u32::from(channels.has_alpha()));
-
-    // The sections: LfGlobal (the default LF quantisation, the global tree,
-    // the global image), each LF group, HfGlobal (empty), each group.
-    let mut global = BitWriter::new();
-    global.bit(true); // LfQuant: all_default
-    modular.write_global_tree(&mut global);
-    modular.write_stream(&mut global, 0);
-    let num_lf = layout.num_lf_groups;
-    let num_groups = layout.num_groups();
-    let mut sections = vec![global];
-    for g in 0..num_lf {
-        let mut s = BitWriter::new();
-        modular.write_stream(&mut s, 1 + g);
-        sections.push(s);
-    }
-    sections.push(BitWriter::new()); // HfGlobal
-    for g in 0..num_groups {
-        let mut s = BitWriter::new();
-        modular.write_stream(&mut s, 1 + num_lf + g);
-        sections.push(s);
-    }
-    let sections: Vec<Vec<u8>> = if num_groups == 1 {
-        // One section holds them all, read on from one to the next.
-        let mut all = BitWriter::new();
-        for s in &sections {
-            all.append_bits(s);
-        }
-        vec![all.finish()]
-    } else {
-        sections.into_iter().map(BitWriter::finish).collect()
-    };
-    let sizes: Vec<usize> = sections.iter().map(Vec::len).collect();
-    headers::write_toc(&mut out, &sizes);
-    for section in &sections {
-        out.append_bytes(section);
-    }
-    Ok(out.finish())
+    let plane = |c: usize| -> Vec<i32> { (0..w * h).map(|i| samples.get(i * count + c)).collect() };
+    let nc = if channels.is_gray() { 1 } else { 3 };
+    let mut encoder = Encoder::new(info)?;
+    encoder.add_frame(Frame {
+        options: FrameOptions::default(),
+        content: FrameContent::Modular(ModularFrame {
+            color: (0..nc).map(plane).collect(),
+            extra: (nc..count).map(plane).collect(),
+            options: options.modular.clone(),
+            transforms: options.transforms.clone(),
+        }),
+    });
+    encoder.finish()
 }

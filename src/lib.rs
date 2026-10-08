@@ -40,7 +40,7 @@
 //! viewer shows it); [`DecodeOptions::apply_orientation`] turns that off and
 //! [`Info::orientation`] says what it was.
 
-mod encode;
+pub mod encode;
 mod error;
 mod runner;
 
@@ -52,10 +52,7 @@ use jxl::api::{
 };
 use jxl::headers::extra_channels::ExtraChannel;
 
-pub use encode::{
-    EntropyOptions, LosslessOptions, Lz77Mode, ModularOptions, Palette, Predictor, Rct, Samples,
-    SqueezeStep, Transform, TreeMode, WeightedParams, encode_lossless, encode_lossless_with,
-};
+pub use encode::{Encoder, LosslessOptions, Samples, encode_lossless, encode_lossless_with};
 pub use error::{Error, Result};
 
 /// The underlying decoder, for what this crate does not wrap.

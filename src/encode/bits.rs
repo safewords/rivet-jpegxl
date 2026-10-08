@@ -80,11 +80,6 @@ impl BitWriter {
         self.write(2, 0);
     }
 
-    /// An empty name.
-    pub(crate) fn empty_string(&mut self) {
-        self.write(2, 0);
-    }
-
     /// The `varint16` of the entropy-code headers.
     pub(crate) fn varint16(&mut self, value: u16) {
         if value == 0 {

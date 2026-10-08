@@ -169,7 +169,9 @@ fn bad_input_is_an_error() {
 
 #[test]
 fn every_entropy_coder_setting() {
-    use jpegxl::{EntropyOptions, LosslessOptions, Lz77Mode, ModularOptions, encode_lossless_with};
+    use jpegxl::encode::{
+        EntropyOptions, LosslessOptions, Lz77Mode, ModularOptions, encode_lossless_with,
+    };
     let mut rng = Rng(77);
     let mut pictures: Vec<(u32, u32, Channels, Vec<u8>)> = vec![
         (

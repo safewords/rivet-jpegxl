@@ -1,10 +1,11 @@
 //! Modular coding, feature by feature, each output decoded by jxl-rs and
 //! compared sample for sample.
 
-use jpegxl::{
-    Channels, LosslessOptions, ModularOptions, Palette, Pixels, Predictor, Rct, Samples,
-    SqueezeStep, Transform, TreeMode, WeightedParams, encode_lossless_with,
+use jpegxl::encode::{
+    LosslessOptions, ModularOptions, Palette, Predictor, Rct, Samples, SqueezeStep, Transform,
+    TreeMode, WeightedParams, encode_lossless_with,
 };
+use jpegxl::{Channels, Pixels};
 
 struct Rng(u64);
 
