@@ -12,6 +12,7 @@ mod modular;
 
 use crate::{Channels, Error, Result};
 use bits::BitWriter;
+pub use entropy::{EntropyOptions, Lz77Mode};
 use headers::ImageHeader;
 use modular::{ModularImage, Plane};
 
@@ -66,6 +67,17 @@ pub fn encode_lossless(
     channels: Channels,
     samples: Samples<'_>,
 ) -> Result<Vec<u8>> {
+    encode_lossless_with(width, height, channels, samples, &EntropyOptions::default())
+}
+
+/// [`encode_lossless`], with the entropy coder's options.
+pub fn encode_lossless_with(
+    width: u32,
+    height: u32,
+    channels: Channels,
+    samples: Samples<'_>,
+    entropy: &EntropyOptions,
+) -> Result<Vec<u8>> {
     if width == 0 || height == 0 || width > MAX_DIMENSION || height > MAX_DIMENSION {
         return Err(Error::InvalidInput(format!(
             "{width}x{height}: each side must be 1 to {MAX_DIMENSION}"
@@ -91,7 +103,7 @@ pub fn encode_lossless(
             samples: (0..w * h).map(|i| samples.get(i * count + c)).collect(),
         })
         .collect();
-    let image = ModularImage::new(planes);
+    let image = ModularImage::new(planes, entropy);
 
     let mut out = BitWriter::new();
     ImageHeader {

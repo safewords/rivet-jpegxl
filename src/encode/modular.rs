@@ -7,7 +7,7 @@
 //! West, North and the clamped gradient that codes the channel smallest.
 
 use super::bits::BitWriter;
-use super::entropy::{EntropyCode, Histograms, pack_signed};
+use super::entropy::{EntropyCode, EntropyOptions, HybridUint, Stream, Token, pack_signed};
 use super::headers::GROUP_DIM;
 
 /// A channel's samples, row by row.
@@ -95,8 +95,8 @@ fn choose_predictor(plane: &Plane) -> Predictor {
         let mut counts = [0u64; 64];
         let mut raw_bits = 0u64;
         for_each_residual(plane, &whole, predictor, |r| {
-            let token = super::entropy::tokenize(pack_signed(r));
-            counts[(token.symbol as usize).min(63)] += 1;
+            let token = HybridUint::new(4, 2, 0).split(pack_signed(r));
+            counts[(token.token as usize).min(63)] += 1;
             raw_bits += u64::from(token.nbits);
         });
         let total = counts.iter().sum::<u64>() as f64;
@@ -194,28 +194,28 @@ fn flatten(tree: &Node, channels: usize) -> (Vec<(usize, u32)>, Vec<usize>) {
 
 /// The image's channels as the frame codes them, ready to write.
 pub(super) struct ModularImage {
-    planes: Vec<Plane>,
-    predictors: Vec<Predictor>,
-    tree_symbols: Vec<(usize, u32)>,
-    context_of: Vec<usize>,
     tree_code: EntropyCode,
+    tree_tokens: Vec<Token>,
     data_code: EntropyCode,
+    /// Each group's residual tokens (one, the global stream's, for a
+    /// one-group image).
+    group_tokens: Vec<Vec<Token>>,
     groups: Vec<Rect>,
 }
 
 impl ModularImage {
     /// `planes`: the colour channels then the extra ones, all one size.
-    pub(super) fn new(planes: Vec<Plane>) -> Self {
+    pub(super) fn new(planes: Vec<Plane>, options: &EntropyOptions) -> Self {
         let (width, height) = (planes[0].width, planes[0].height);
         let predictors: Vec<Predictor> = planes.iter().map(choose_predictor).collect();
         let tree = channel_tree(0, planes.len() - 1, &predictors);
         let (tree_symbols, context_of) = flatten(&tree, planes.len());
-
-        let mut tree_histograms = Histograms::new(TREE_CONTEXTS);
-        for &(context, value) in &tree_symbols {
-            tree_histograms.add(context, value);
-        }
-        let tree_code = EntropyCode::new(&tree_histograms);
+        let tree_tokens: Vec<Token> = tree_symbols
+            .iter()
+            .map(|&(c, v)| Token::new(c as u32, v))
+            .collect();
+        let (tree_code, mut tree_streams) =
+            EntropyCode::build(TREE_CONTEXTS, vec![Stream::new(tree_tokens)], options, true);
 
         let dim = GROUP_DIM as usize;
         let groups: Vec<Rect> = (0..height.div_ceil(dim))
@@ -229,24 +229,29 @@ impl ModularImage {
             })
             .collect();
 
-        let leaves = predictors.len();
-        let mut data_histograms = Histograms::new(leaves);
-        for rect in &groups {
-            for (c, plane) in planes.iter().enumerate() {
-                for_each_residual(plane, rect, predictors[c], |r| {
-                    data_histograms.add(context_of[c], pack_signed(r));
-                });
-            }
-        }
-        let data_code = EntropyCode::new(&data_histograms);
+        let streams: Vec<Stream> = groups
+            .iter()
+            .map(|rect| {
+                let mut tokens = Vec::new();
+                for (c, plane) in planes.iter().enumerate() {
+                    for_each_residual(plane, rect, predictors[c], |r| {
+                        tokens.push(Token::signed(context_of[c] as u32, r));
+                    });
+                }
+                Stream {
+                    tokens,
+                    width: rect.width as u32,
+                }
+            })
+            .collect();
+        let (data_code, group_tokens) =
+            EntropyCode::build(predictors.len(), streams, options, true);
 
         ModularImage {
-            planes,
-            predictors,
-            tree_symbols,
-            context_of,
             tree_code,
+            tree_tokens: tree_streams.remove(0),
             data_code,
+            group_tokens,
             groups,
         }
     }
@@ -266,30 +271,18 @@ impl ModularImage {
     pub(super) fn write_global(&self, w: &mut BitWriter) {
         w.bit(true); // LfQuant: all_default
         w.bit(true); // a global tree
-        self.tree_code.write_header(w);
-        for &(context, value) in &self.tree_symbols {
-            self.tree_code.write(w, context, value);
-        }
+        self.tree_code.write_all(w, &self.tree_tokens);
         self.data_code.write_header(w);
         write_group_header(w);
         if self.single_group() {
-            self.write_samples(w, &self.groups[0]);
+            self.data_code.write_tokens(w, &self.group_tokens[0]);
         }
     }
 
     /// Group `index`'s section (of a many-group image).
     pub(super) fn write_group(&self, w: &mut BitWriter, index: usize) {
         write_group_header(w);
-        self.write_samples(w, &self.groups[index]);
-    }
-
-    fn write_samples(&self, w: &mut BitWriter, rect: &Rect) {
-        for (c, plane) in self.planes.iter().enumerate() {
-            let context = self.context_of[c];
-            for_each_residual(plane, rect, self.predictors[c], |r| {
-                self.data_code.write(w, context, pack_signed(r));
-            });
-        }
+        self.data_code.write_tokens(w, &self.group_tokens[index]);
     }
 }
 

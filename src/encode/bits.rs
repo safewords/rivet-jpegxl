@@ -104,6 +104,23 @@ impl BitWriter {
         }
     }
 
+    /// Bits written so far.
+    pub(super) fn bits_written(&self) -> usize {
+        self.bytes.len() * 8 + self.pending as usize
+    }
+
+    /// Another writer's bits, after these.
+    pub(super) fn append_bits(&mut self, other: &BitWriter) {
+        if self.pending == 0 {
+            self.bytes.extend_from_slice(&other.bytes);
+        } else {
+            for &b in &other.bytes {
+                self.write(8, u32::from(b));
+            }
+        }
+        self.write(other.pending, other.acc as u32);
+    }
+
     pub(super) fn append_bytes(&mut self, bytes: &[u8]) {
         debug_assert_eq!(self.pending, 0);
         self.bytes.extend_from_slice(bytes);
