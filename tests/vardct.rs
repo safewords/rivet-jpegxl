@@ -696,8 +696,10 @@ fn custom_opsin_and_upsampling_kernels() {
             [(x * 3) as u8, (y * 4) as u8, 100]
         })
         .collect();
-    let mut opsin = OpsinInverse::default();
-    opsin.opsin_biases = [-0.003; 3];
+    let mut opsin = OpsinInverse {
+        opsin_biases: [-0.003; 3],
+        ..Default::default()
+    };
     opsin.inverse_matrix[0] *= 1.01;
     let mut info = ImageInfo::new(w as u32, h as u32);
     info.xyb = true;
