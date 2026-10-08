@@ -4,7 +4,8 @@
 
 **JPEG XL decoding** with a small, typed API, over
 [jxl-rs](https://github.com/libjxl/jxl-rs) — the JPEG XL project's own
-pure-Rust decoder — and **lossless JPEG XL encoding** of this crate's own.
+pure-Rust decoder — and a **JPEG XL encoder** of this crate's own that
+writes everything the decoder reads, lossless and lossy.
 No C, no system libraries, no build script.
 
 Written for the **[rivet](https://github.com/safewords/rivet)** transcoder,
@@ -74,18 +75,41 @@ let jxl = jpegxl::encode_lossless(64, 48, jpegxl::Channels::Rgba, jpegxl::Sample
 
 ## Encoding
 
-`encode_lossless` writes a bare codestream holding one modular frame: gray,
-gray + alpha, RGB or RGBA, 8 or 16 bits a sample, sRGB (gray: the sRGB
-curve), straight alpha. Each channel's samples are predicted from their
-neighbours — West, North or the clamped gradient, whichever codes that
-channel smallest — and the residuals are prefix coded, one histogram per
-channel, in 256-pixel groups.
+`jpegxl::encode` writes everything jxl-rs reads — [PARITY.md](PARITY.md)
+lists each feature with the API that writes it and the test that checks it.
 
-It is a first encoder: exact, quick, and not yet small. Prefix codes spend
-at least a bit on each sample, so smooth pictures come out larger than
-libjxl makes them; richer contexts (the MA tree splitting on more than the
-channel), ANS, the colour transforms (RCT, palette) and, later, lossy
-VarDCT are what close the gap.
+- **Short ways:** `encode_lossless` (gray / RGB, ± alpha, 8 or 16 bits,
+  every sample exact) and `encode_lossy` (VarDCT in XYB at a distance, the
+  alpha exact).
+- **`Encoder`:** an `ImageInfo` (any integer or float sample format, extra
+  channels of every kind, named colour encodings or ICC profiles,
+  orientation, preview, animation, tone mapping, custom XYB and upsampling
+  kernels) and any number of frames — modular or VarDCT, regular, LF,
+  reference-only or skip-progressive, cropped, blended, saved to reference
+  slots, upsampled, YCbCr with chroma subsampling, in progressive passes,
+  with Gaborish and EPF, patches, splines and noise.
+- **Modular:** all 14 predictors and the weighted predictor, MA trees
+  learned on every property, RCT, palettes (with deltas and the implicit
+  entries), squeeze (lossless, or lossy with quantised residuals), global
+  and per-group transforms and trees.
+- **VarDCT:** all 27 block transforms, chosen per region or given;
+  per-block quantisers; every dequantisation-table encoding; chroma from
+  luma; custom coefficient orders and block context maps; LF frames.
+- **Entropy coding:** ANS or prefix codes, LZ77, histogram clustering.
+- **Container:** `wrap` puts a codestream in `jxlc` or `jxlp` boxes with
+  Exif / XMP / JUMBF / any metadata boxes, Brotli-wrapped if asked.
+
+```rust,no_run
+# fn main() -> jpegxl::Result<()> {
+let rgba = vec![0u8; 640 * 480 * 4];
+let exact = jpegxl::encode_lossless(640, 480, jpegxl::Channels::Rgba, jpegxl::Samples::U8(&rgba))?;
+let small = jpegxl::encode_lossy(640, 480, jpegxl::Channels::Rgba, jpegxl::Samples::U8(&rgba), 1.0)?;
+# Ok(()) }
+```
+
+The encoder favours exactness and coverage over speed and size: its
+choices (tree learning, block selection, quantisation) are simple, and
+libjxl makes smaller files.
 
 ## How it is checked
 
@@ -96,10 +120,10 @@ thread and many), the limits, and truncated or damaged input as errors rather
 than panics — plus the colour-encoding and Exif parsing. jxl-rs is tested
 against the JPEG XL conformance suite in its own repository.
 
-The encoder is checked against jxl-rs: every layout at 8 and 16 bits, sizes
-from 1x1 up, pictures spanning many groups and more than one LF group,
-constant pictures and white noise — each encoded, decoded by jxl-rs and
-compared sample for sample.
+The encoder is checked against jxl-rs, feature by feature (PARITY.md): each
+test encodes, decodes with jxl-rs and compares — sample for sample where the
+coding is lossless, by PSNR where it is lossy. Its VarDCT transforms are
+checked, forwards and back, against jxl-rs's own inverse transforms.
 
 ## Licence
 

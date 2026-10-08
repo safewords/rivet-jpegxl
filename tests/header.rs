@@ -494,3 +494,20 @@ fn animation() {
         }
     }
 }
+
+#[test]
+fn widest_integers() {
+    let (w, h) = (9usize, 5usize);
+    // 31 bits a sample.
+    let mut info = ImageInfo::new(w as u32, h as u32);
+    info.format = SampleFormat::Int(31);
+    let color: Vec<Vec<i32>> = (0..3)
+        .map(|c| plane(w, h, i32::MAX as u32, c + 2))
+        .collect();
+    let jxl = still(info, color.clone(), vec![]);
+    let d = decode_raw(&jxl, &RawOptions::default()).unwrap();
+    for i in 0..w * h {
+        let got = f64::from(d.frames[0].color[i * 3]) * f64::from(i32::MAX);
+        assert!((got - f64::from(color[0][i])).abs() < 1e-6 * f64::from(i32::MAX));
+    }
+}

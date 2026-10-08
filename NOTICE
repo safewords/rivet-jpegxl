@@ -27,10 +27,15 @@ BSD-3-Clause licence.
 The encoder (src/encode)
 ------------------------------------------------------------------------------
 
-The lossless encoder is this crate's own code. The JPEG XL standard (ISO/IEC
+The encoder (lossless and lossy) is this crate's own code. The JPEG XL standard (ISO/IEC
 18181) is not freely available, so the codestream's syntax it writes was
 learned from jxl-rs's decoder source (above, BSD-3-Clause): what the decoder
 reads, in what order, with what coding. No jxl-rs code is copied into it; its
-output is checked by decoding it with jxl-rs. Google's PATENTS grant is for
+output is checked by decoding it with jxl-rs. The format's constant tables
+(the default dequantisation parameters, the AFV basis, the implicit
+palette, the 2-D LZ77 distances, the static code-length codes) are the
+format's own and appear in the encoder as data; jxl-rs's transform crate
+(jxl_transforms, BSD-3-Clause) is used by the tests only, to check the
+encoder's transforms. Google's PATENTS grant is for
 its own JPEG XL implementations; this note makes no claim that it covers
 this encoder.
