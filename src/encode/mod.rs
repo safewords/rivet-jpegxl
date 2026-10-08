@@ -11,6 +11,7 @@
 #![allow(clippy::needless_range_loop)]
 
 mod bits;
+mod container;
 mod encoder;
 mod entropy;
 mod frame;
@@ -19,6 +20,7 @@ mod icc;
 mod modular;
 
 use crate::{Channels, Error, Result};
+pub use container::{Container, MetadataBox, brotli_stored, wrap};
 pub use encoder::{Encoder, Frame, FrameContent, FrameOptions, ModularFrame, float_to_format_bits};
 pub use entropy::{EntropyOptions, Lz77Mode};
 pub use frame::{BlendMode, Blending, Crop, FrameType, Passes, Restoration};
