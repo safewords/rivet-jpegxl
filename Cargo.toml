@@ -23,6 +23,11 @@ name = "jpegxl"
 # chosen at run time.
 jxl = "0.7.4"
 
+[dev-dependencies]
+# jxl-rs's inverse transforms, as the oracle the encoder's forward transforms
+# are checked against (tests only).
+jxl_transforms = "0.7.4"
+
 [features]
 default = []
 # Brotli-compressed metadata boxes (`brob`: a compressed Exif or XMP box).

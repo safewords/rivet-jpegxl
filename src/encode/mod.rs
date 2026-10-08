@@ -21,6 +21,7 @@ mod frame;
 mod header;
 mod icc;
 mod modular;
+mod vardct;
 mod xyb;
 
 use crate::{Channels, Error, Result};
