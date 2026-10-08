@@ -429,6 +429,11 @@ impl EntropyCode {
     }
 }
 
+/// A context map as a decoder's `decode_context_map` reads it.
+pub(crate) fn write_context_map(w: &mut BitWriter, map: &[u8], options: &EntropyOptions) {
+    w.append_bits(&context_map_header(map, options));
+}
+
 /// The context map, in the cheapest of: the simple form (entries of at
 /// most 3 bits), or entropy coded, with or without move-to-front.
 fn context_map_header(map: &[u8], options: &EntropyOptions) -> BitWriter {

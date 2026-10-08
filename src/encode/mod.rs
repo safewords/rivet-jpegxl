@@ -40,6 +40,10 @@ pub use header::{
 pub use modular::{
     ModularOptions, Palette, Predictor, Rct, SqueezeStep, Transform, TreeMode, WeightedParams,
 };
+pub use vardct::coeffs::BlockContextMap;
+pub use vardct::encode::{ColorCorrelation, Strategy, VarDctFrame, VarDctOptions};
+pub use vardct::quant::{Bands, QuantEncoding};
+pub use vardct::transform::TransformType;
 pub use xyb::{Xyb, srgb_to_linear};
 
 /// Options for lossless encoding.

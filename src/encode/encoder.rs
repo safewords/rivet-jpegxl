@@ -11,6 +11,7 @@ use super::header::ImageInfo;
 use super::modular::{
     self, Channel, ImageStreams, Layout, ModularCoded, ModularOptions, ModularStream, Transform,
 };
+use super::vardct::encode::{VarDctFrame, code_vardct};
 use crate::{Error, Result};
 
 /// A frame's options: everything its header can say.
@@ -117,6 +118,7 @@ impl ModularFrame {
 #[derive(Clone, Debug, PartialEq)]
 pub enum FrameContent {
     Modular(ModularFrame),
+    VarDct(VarDctFrame),
 }
 
 /// A frame to encode.
@@ -174,7 +176,7 @@ impl Encoder {
     /// The coded (width, height) of each channel of a frame with `options`:
     /// the colour channels, then the extra channels.
     pub fn channel_sizes(&self, options: &FrameOptions) -> Result<Vec<(usize, usize)>> {
-        let header = self.frame_header(options, &self.info, true)?;
+        let header = self.frame_header(options, &self.info, true, None)?;
         Ok(channel_shapes(&header, &self.info)
             .into_iter()
             .map(|(w, h, _)| (w, h))
@@ -186,7 +188,12 @@ impl Encoder {
         o: &FrameOptions,
         info: &ImageInfo,
         is_last: bool,
+        content: Option<&FrameContent>,
     ) -> Result<FrameHeader> {
+        let (modular, x_qm, b_qm) = match content {
+            Some(FrameContent::VarDct(v)) => (false, v.options.x_qm_scale, v.options.b_qm_scale),
+            _ => (true, 3, 2),
+        };
         let ne = info.extra_channels.len();
         let ec_blending = if o.ec_blending.is_empty() {
             vec![Blending::default(); ne]
@@ -204,7 +211,7 @@ impl Encoder {
         );
         let header = FrameHeader {
             frame_type: o.frame_type,
-            modular: true,
+            modular,
             flags: (if o.use_lf_frame { USE_LF_FRAME } else { 0 })
                 | (if o.skip_adaptive_lf_smoothing {
                     SKIP_ADAPTIVE_LF_SMOOTHING
@@ -216,8 +223,8 @@ impl Encoder {
             upsampling: o.upsampling,
             ec_upsampling,
             group_size_shift: o.group_size_shift,
-            x_qm_scale: 3,
-            b_qm_scale: 2,
+            x_qm_scale: x_qm,
+            b_qm_scale: b_qm,
             passes: o.passes.clone(),
             crop: o.crop,
             blending: o.blending,
@@ -253,12 +260,12 @@ impl Encoder {
             let mut info = self.info.clone();
             info.width = pw;
             info.height = ph;
-            let header = self.frame_header(&p.options, &info, true)?;
+            let header = self.frame_header(&p.options, &info, true, Some(&p.content))?;
             coded.push(self.code_frame(p, header, info, &mut sixteen_bit)?);
         }
         let n = self.frames.len();
         for (i, f) in self.frames.iter().enumerate() {
-            let header = self.frame_header(&f.options, &self.info, i + 1 == n)?;
+            let header = self.frame_header(&f.options, &self.info, i + 1 == n, Some(&f.content))?;
             coded.push(self.code_frame(f, header, self.info.clone(), &mut sixteen_bit)?);
         }
         if !coded.last().unwrap().header.is_last {
@@ -301,25 +308,26 @@ impl Encoder {
         info: ImageInfo,
         sixteen_bit: &mut bool,
     ) -> Result<CodedFrame> {
-        match &frame.content {
+        let sections = match &frame.content {
             FrameContent::Modular(m) => {
-                let sections =
-                    code_modular(m, &header, &info, &frame.options.features, sixteen_bit)?;
-                let single = sections.len() == 1;
-                let order = frame.options.section_order.clone();
-                if single && order.is_some() {
-                    return Err(Error::InvalidInput(
-                        "a one-section frame has no section order".into(),
-                    ));
-                }
-                Ok(CodedFrame {
-                    header,
-                    info,
-                    sections,
-                    order,
-                })
+                code_modular(m, &header, &info, &frame.options.features, sixteen_bit)?
             }
+            FrameContent::VarDct(v) => {
+                code_vardct(v, &header, &info, &frame.options.features, sixteen_bit)?
+            }
+        };
+        let order = frame.options.section_order.clone();
+        if sections.len() == 1 && order.is_some() {
+            return Err(Error::InvalidInput(
+                "a one-section frame has no section order".into(),
+            ));
         }
+        Ok(CodedFrame {
+            header,
+            info,
+            sections,
+            order,
+        })
     }
 }
 
