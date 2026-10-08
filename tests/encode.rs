@@ -169,7 +169,7 @@ fn bad_input_is_an_error() {
 
 #[test]
 fn every_entropy_coder_setting() {
-    use jpegxl::{EntropyOptions, Lz77Mode, encode_lossless_with};
+    use jpegxl::{EntropyOptions, LosslessOptions, Lz77Mode, ModularOptions, encode_lossless_with};
     let mut rng = Rng(77);
     let mut pictures: Vec<(u32, u32, Channels, Vec<u8>)> = vec![
         (
@@ -208,12 +208,18 @@ fn every_entropy_coder_setting() {
         for lz77 in [Lz77Mode::Off, Lz77Mode::Rle, Lz77Mode::Full] {
             for clustering in [false, true] {
                 for optimize_uint in [false, true] {
-                    let options = EntropyOptions {
-                        ans,
-                        lz77,
-                        clustering,
-                        max_histograms: if clustering { 2 } else { 256 },
-                        optimize_uint,
+                    let options = LosslessOptions {
+                        modular: ModularOptions {
+                            entropy: EntropyOptions {
+                                ans,
+                                lz77,
+                                clustering,
+                                max_histograms: if clustering { 2 } else { 256 },
+                                optimize_uint,
+                            },
+                            ..Default::default()
+                        },
+                        ..Default::default()
                     };
                     for (w, h, channels, pixels) in &pictures {
                         let jxl =

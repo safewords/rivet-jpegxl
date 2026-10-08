@@ -36,6 +36,8 @@ pub(super) struct ImageHeader {
     pub bits_per_sample: u32,
     pub gray: bool,
     pub alpha: bool,
+    /// Every modular sample fits 16 bits (the decoder may store them so).
+    pub modular_16bit: bool,
 }
 
 impl ImageHeader {
@@ -55,7 +57,7 @@ impl ImageHeader {
         w.bit(false); // all_default
         w.bit(false); // extra_fields: upright, no preview or animation
         self.write_bit_depth(w);
-        w.bit(self.bits_per_sample <= 12); // modular_16bit_sufficient
+        w.bit(self.modular_16bit); // modular_16bit_sufficient
         w.u32(u32::from(self.alpha), EXTRA_CHANNELS);
         if self.alpha {
             self.write_alpha_info(w);

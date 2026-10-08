@@ -52,7 +52,10 @@ use jxl::api::{
 };
 use jxl::headers::extra_channels::ExtraChannel;
 
-pub use encode::{EntropyOptions, Lz77Mode, Samples, encode_lossless, encode_lossless_with};
+pub use encode::{
+    EntropyOptions, LosslessOptions, Lz77Mode, ModularOptions, Palette, Predictor, Rct, Samples,
+    SqueezeStep, Transform, TreeMode, WeightedParams, encode_lossless, encode_lossless_with,
+};
 pub use error::{Error, Result};
 
 /// The underlying decoder, for what this crate does not wrap.
